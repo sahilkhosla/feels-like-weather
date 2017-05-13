@@ -8,50 +8,136 @@ var URLS = {
 	'FORECAST': ''
 };
 
+var STATES = {
+    'alabama': 'AL',
+    'alaska': 'AK',
+    'arizona': 'AZ',
+    'arkansas': 'AR',
+    'california': 'CA',
+    'colorado': 'CO',
+    'connecticut': 'CT',
+    'delaware': 'DE',
+    'florida': 'FL',
+    'georgia': 'GA',
+    'hawaii': 'HI',
+    'idaho': 'ID',
+    'illinois': 'IL',
+    'indiana': 'IN',
+    'iowa': 'IA',
+    'kansas': 'KS',
+    'kentucky': 'KY',
+    'louisiana': 'LA',
+    'maine': 'ME',
+    'maryland': 'MD',
+    'massachusetts': 'MA',
+    'michigan': 'MI',
+    'minnesota': 'MN',
+    'mississippi': 'MS',
+    'missouri': 'MO',
+    'montana': 'MT',
+    'mebraska': 'NE',
+    'nevada': 'NV',
+    'new hampshire': 'NH',
+    'new jersey': 'NJ',
+    'new mexico': 'NM',
+    'new york': 'NY',
+    'north carolina': 'NC',
+    'north dakota': 'ND',
+    'ohio': 'OH',
+    'oklahoma': 'OK',
+    'oregon': 'OR',
+    'pennsylvania': 'PA',
+    'rhode island': 'RI',
+    'south carolina': 'SC',
+    'south dakota': 'SD',
+    'tennessee': 'TN',
+    'texas': 'TX',
+    'utah': 'UT',
+    'vermont': 'VT',
+    'virginia': 'VA',
+    'washington': 'WA',
+    'west virginia': 'WV',
+    'wisconsin': 'WI',
+    'wyoming': 'WY'
+};
+
+var MESSAGES = {
+	'launch': 'To ask Brolly for weather, you must say the city and the state'
+};
+
 var handlers = {
 
 	'LaunchRequest': function () {
-        this.emit(':tell', 'Say something useful on launch');
+		//TODO
+        this.emit(':tell', MESSAGES.launch);
     },
+
     'GetFeelsLikeWeather': function () {
     	
     	var that = this,
     		message = '',
-    		cityName = this.event.request.intent.slots.City.value;
+    		cityName = this.event.request.intent.slots.city.value || '',
+    		stateName = this.event.request.intent.slots.state.value || '';
 
-		async.waterfall([
-			function(callback) {
-				callback(null, cityName);
-			},
-			function(cityName, callback) {
-				getQualifiedLocationString(cityName, callback);
-			},
-			function(stateName, cityName, callback) {
-				getConditions(stateName, cityName, callback);
-			},
-			function(stateName, cityName, temperature, callback) {
-				if (temperature) {
-					message = 'it feels like ' + temperature + 'degree celcius in ' + cityName	
-				}
-				
-				emitMessage(message, callback);
+    	console.log('State[1]: ', stateName);
+
+		if (cityName !== '') {
+
+			console.log('City: ', cityName);
+
+			if (stateName !== '') {
+				console.log('State[2]: ', stateName);
+				stateName = STATES[stateName.toLowerCase()];
+				console.log('State[3]: ', stateName);
 			}
-		], function(err, results) {
-			console.log('Error', err);
-		});    	
-	
+
+			console.log('State[4]: ', stateName);
+
+			async.waterfall([
+				function(callback) {
+					callback(null, cityName, stateName);
+				},
+				function(cityName, stateName, callback) {
+					getQualifiedLocationString(cityName, stateName, callback);
+				},
+				function(cityName, stateName, callback) {
+					getConditions(cityName, stateName, callback);
+				},
+				function(cityName, stateName, temperature, callback) {
+					if (temperature) {
+						message = 'currently, it feels like ' + temperature + ' degree celcius in ' + cityName	
+					}
+					
+					console.log('message: ', message);
+
+					if (message) {
+						that.emit(':tell', message);		
+					} else {
+						that.emit(':tell', 'could not get weather');		
+					}
+
+					callback(null, 'done');
+				}
+			], function(err, results) {
+				console.log('Error', err);
+			});    	
+		} else {
+			this.emit(':tell', 'sorry, I did not understand the city name');	
+		}
+
+		
     }
 
 };
 
 exports.handler = function(event, context, callback){
-    var alexa = Alexa.handler(event, context);
-    alexa.registerHandlers(handlers);
-    alexa.execute();
+    var alexa = Alexa.handler(event, context);    
+	alexa.registerHandlers(handlers);
+	alexa.execute();        
 };
 
 /* Helper Functions */
-function getQualifiedLocationString(cityName, callback) {	
+function getQualifiedLocationString(cityName, stateName, callback) {	
 
 	console.log('getting location...');
 
@@ -59,57 +145,63 @@ function getQualifiedLocationString(cityName, callback) {
 	var cityNameFromResponse,
 		stateNameFromResponse;
 
-	console.log('geo url...', geoUrl);
+	console.log('geo url: ', geoUrl);
 
 	//call wundergroud GEO API to get state for the city 
 	requestify.get(geoUrl).then(function(response) {	    
+    	
     	console.log('response recieved...');
-	    var results = response.results,
+
+	    var data = response.getBody(),
+	    	results,
 	    	result;
 
-	    if (results && results.size > 0) {
+	    results = data.response.results;
+
+	    console.log('geo data: ', data);
+	    console.log('geo results: ', results);
+
+	    if (results && results.length > 0) {
 	    	result = results.filter(function(obj) {
-	    		return obj.city === cityName;
+	    		return (obj.city === cityName && obj.state === stateName);
 	    	});
 
-	    	if (result) {
-	    		cityNameFromResponse = result.city;
-	    		stateNameFromResponse = result.state;
+	    	if (result.length > 0) {
+	    		cityNameFromResponse = result[0].city;
+	    		stateNameFromResponse = result[0].state;
 	    	}
 	    }	
 
 	    if (cityNameFromResponse && stateNameFromResponse) {
+	    	
 	    	console.log('stateName...', stateNameFromResponse);
+
 	    	callback(null, cityNameFromResponse, stateNameFromResponse);
+
 	    } else {
+	    	
 	    	callback(null, '', '');
 	    }
 	    	        	    
 	});
 }
 
-function getConditions(stateName, cityName, callback) {
+function getConditions(cityName, stateName, callback) {
 	console.log('getting conditions...');
-	requestify.get('http://api.wunderground.com/api/ed6de775d05cf9c3/conditions/q/IL/Chicago.json').then(function(response) {	    
+
+	var conditionsUrl = URLS.CONDITIONS.replace('_STATE_', stateName).replace('_CITY_NAME_', cityName);
+
+	console.log('conditionsUrl: ', conditionsUrl);
+
+	requestify.get(conditionsUrl).then(function(response) {	    
 	    var weather = response.getBody();
 	    if (weather) {
 	    	console.log('weather is available', weather);
 	    	var feelslike_c = weather.current_observation.feelslike_c;
 	    	console.log('getting conditions...', feelslike_c);
-	    	callback(null, stateName, cityName, feelslike_c);	    	
+	    	callback(null, cityName, stateName, feelslike_c);	    	
 	    } else {
-	    	callback(null, stateName, cityName, '');
+	    	callback(null, cityName, stateName, '');
 	    }			    	    
 	});
-}
-
-function emitMessage(message, callback) {
-	console.log('message: ', message);
-	if (message) {
-		alexa.emit(':tell', message);		
-	} else {
-		alexa.emit(':tell', 'could not get weather');		
-	}
-
-	callback(null, 'done');
 }
